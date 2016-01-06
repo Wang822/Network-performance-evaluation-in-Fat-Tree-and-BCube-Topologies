@@ -1,5 +1,8 @@
 // Construction of Fat-tree Architecture
 // Authors: Linh Vu, Daji Wong
+// Credits to ARFATH AHAMED email: arfathsm@gmail.com for compatibility changes with ns3 3.21
+// Further edits by Leonardo Pellegrina leonardo.pellegrina@studenti.unipd.it
+// To be used with ns-3 3.21
 
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
@@ -38,7 +41,6 @@
 #include "ns3/csma-module.h"
 #include "ns3/ipv4-nix-vector-helper.h"
 #include "ns3/random-variable.h"
-#include "ns3/netanim-module.h"
 /*
 	- This work goes along with the paper "Towards Reproducible Performance Studies of Datacenter Network Architectures Using An Open-Source Simulation Approach"
 
@@ -56,22 +58,24 @@
 		3. Address of core switch: 10.(group number + k).switch.0 /8
 		   (Note: there are k/2 group of core switch)
 
-	- On/Off Traffic of the simulation: addresses of client and server are randomly selected everytime
+	- On/Off Traffic of the simulation: addresses of client and server are randomly selected at every iteration
 	
 	- Simulation Settings:
-                - Number of pods (k): 4-24 (run the simulation with varying values of k)
-                - Number of nodes: 16-3456
-		- Simulation running time: 100 seconds
+                - Number of nodes: 128-4394
+				- Number of active connections: 0.1 * nodes - 100 * nodes
+				- Number of iterations (with same settings): iterations
+		- Simulation running time: 1 second
 		- Packet size: 1024 bytes
 		- Data rate for packet sending: 1 Mbps
 		- Data rate for device channel: 1000 Mbps
 		- Delay time for device: 0.001 ms
 		- Communication pairs selection: Random Selection with uniform probability
-		- Traffic flow pattern: Exponential random traffic
+		- Traffic flow pattern: Constant rate traffic
 		- Routing protocol: Nix-Vector
 
-        - Statistics Output:
-                - Flowmonitor XML output file: Fat-tree.xml is located in the /statistics folder
+        - Flowmonitor Statistics Output:
+				- Formatted: output-fat-tree-leo-test-exp.txt
+				- Raw: raw-fat-tree-leo-test-exp.txt
             
 
 */
@@ -79,6 +83,10 @@
 using namespace ns3;
 using namespace std;
 NS_LOG_COMPONENT_DEFINE ("Fat-Tree-Architecture");
+// formatted output 
+ofstream file1;  
+// raw data output
+ofstream file2;
 
 // Function to create address string from numbers
 //
@@ -113,12 +121,25 @@ char * toString(int a,int b, int c, int d){
 
 // Main function
 //
-int 
-	main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
+	double initial_ports =  6;
+	double max_ports =  26;
+	double delta_ports =  3;
+	int ports = 0;
+	double traffic = 1;
+	int total_host = 0;
+	
+	file1.open ("output-fat-tree-leonpelleg.txt", std::ios_base::app);
+	file1 << "Fat Tree Simulation\n";
+	file1.close();
+	
+	// increment ports 
+	for(ports = initial_ports; ports < max_ports + 1; ports = ports + delta_ports) 
+	{
 //=========== Define parameters based on value of k ===========//
 //
-	int k = 4;			// number of ports per switch
+	int k = ports;			// number of ports per switch
 	int num_pod = k;		// number of pod
 	int num_host = (k/2);		// number of hosts under a switch
 	int num_edge = (k/2);		// number of edge switch in a pod
@@ -126,9 +147,50 @@ int
 	int num_agg = (k/2);		// number of aggregation switch in a pod
 	int num_group = k/2;		// number of group of core switches
         int num_core = (k/2);		// number of core switch in a group
-	int total_host = k*k*k/4;	// number of hosts in the entire network	
-	char filename [] = "statistics/Fat-tree.xml";// filename for Flow Monitor xml output file
+	total_host = k*k*k/4;	// number of hosts in the entire network	
+	//char filename [] = "statistics/Fat-tree.xml";// filename for Flow Monitor xml output file
 
+		// increment the maximum number of active connections
+		for(traffic = 0.1; traffic < 101; traffic = traffic * 10) 
+		{
+			
+			// Number of apps relative to numer of hosts
+			int total_apps = traffic * total_host; 
+			
+			// iterate the same simulation for stat reliability 
+			int iterations = 10;
+			
+			// stats variables
+			// avg results at each iteration
+			double throughputs[iterations];
+			double delays[iterations];
+			double droprate[iterations];
+			for(int t = 0; t < iterations; t++)
+			{
+				throughputs[t] = 0;
+				delays[t] = 0;
+				droprate[t] = 0;
+			}
+			
+			// stat values of each flow
+			double i_throughput = 0;
+			double i_delay = 0;
+			// final stat values: min and max
+			double min_throughput = 0;
+			double max_throughput = 0;
+			double min_delay = 0;
+			double max_delay = 0;
+			// final stat values: avg
+			double m_throughput = 0;
+			double m_delay = 0;
+			double m_droprate = 0;
+			// total number of flows: it can be different from total number of apps
+			int total_flows = 0;
+			
+			// Start of the iterations
+			for(int t = 0; t < iterations; t++)
+			{
+	
 // Define variables for On/Off Application
 // These values will be used to serve the purpose that addresses of server and client are selected randomly
 // Note: the format of host's address is 10.pod.switch.(host+2)
@@ -146,14 +208,13 @@ int
 	int i = 0;	
 	int j = 0;	
 	int h = 0;
-	float an=0.0;
 
 
 // Initialize parameters for On/Off application
 //
 	int port = 9;
 	int packetSize = 1024;		// 1024 bytes
-	char dataRate_OnOff [] = "1Mbps";
+	//char dataRate_OnOff [] = "1Mbps";
 	char maxBytes [] = "0";		// unlimited
 
 // Initialize parameters for Csma and PointToPoint protocol
@@ -161,14 +222,6 @@ int
 	char dataRate [] = "1000Mbps";	// 1Gbps
 	int delay = 0.001;		// 0.001 ms
 
-	
-// Output some useful information
-//	
-	std::cout << "Value of k =  "<< k<<"\n";
-	std::cout << "Total number of hosts =  "<< total_host<<"\n";
-	std::cout << "Number of hosts under each switch =  "<< num_host<<"\n";
-	std::cout << "Number of edge switch under each pod =  "<< num_edge<<"\n";
-	std::cout << "------------- "<<"\n";
 
 // Initialize Internet Stack and Routing Protocols
 //	
@@ -215,8 +268,12 @@ int
 
 // Generate traffics for the simulation
 //	
-	ApplicationContainer app[total_host];
-	for (i=0;i<total_host;i++){	
+// store the apps into dynamic memory
+	std::vector<ApplicationContainer> app(total_apps);  
+	// seed the rand() functions
+	srand(time(0));
+		
+	for (i=0;i<total_apps;i++){	
 	// Randomly select a server
 		podRand = rand() % num_pod + 0;
 		swRand = rand() % num_edge + 0;
@@ -236,11 +293,14 @@ int
 	*/
 
 
-	        oo.SetAttribute("OnTime",StringValue("ns3::ConstantRandomVariable[Constant=1]"));  
-	        oo.SetAttribute("OffTime",StringValue("ns3::ConstantRandomVariable[Constant=1]")); 
- 	        oo.SetAttribute("PacketSize",UintegerValue (packetSize));
- 	       	oo.SetAttribute("DataRate",StringValue (dataRate_OnOff));      
+	        // constant rate traffic
+			oo.SetConstantRate(DataRate("1Mbps") , packetSize);
 	        oo.SetAttribute("MaxBytes",StringValue (maxBytes));
+			//oo.SetAttribute("OnTime",StringValue("ns3::ExponentialRandomVariable[Mean=0.01]"));  
+			//oo.SetAttribute("OffTime",StringValue("ns3::ExponentialRandomVariable[Mean=0.01]")); 
+			//oo.SetAttribute("PacketSize",UintegerValue (packetSize));
+			//oo.SetAttribute("DataRate",StringValue (dataRate_OnOff));      
+			//oo.SetAttribute("MaxBytes",StringValue (maxBytes));
 
 	// Randomly select a client
 		rand1 = rand() % num_pod + 0;
@@ -258,7 +318,7 @@ int
 		onoff.Add(host[rand1][rand2].Get(rand3));
 	     	app[i] = oo.Install (onoff);
 	}
-	std::cout << "Finished creating On/Off traffic"<<"\n";
+	//std::cout << "Finished creating On/Off traffic"<<"\n";
 
 // Inintialize Address Helper
 //	
@@ -303,7 +363,7 @@ int
 			ipContainer[i][j] = address.Assign(hostSw[i][j]);			
 		}
 	}
-	std::cout << "Finished connecting edge switches and hosts  "<< "\n";
+	//std::cout << "Finished connecting edge switches and hosts  "<< "\n";
 
 //=========== Connect aggregate switches to edge switches ===========//
 //
@@ -330,7 +390,7 @@ int
 			}			
 		}		
 	}
-	std::cout << "Finished connecting aggregation switches and edge switches  "<< "\n";
+	//std::cout << "Finished connecting aggregation switches and edge switches  "<< "\n";
 
 //=========== Connect core switches to aggregate switches ===========//
 //
@@ -358,16 +418,20 @@ int
 			}
 		}
 	}
-	std::cout << "Finished connecting core switches and aggregation switches  "<< "\n";
-	std::cout << "------------- "<<"\n";
+	//std::cout << "Finished connecting core switches and aggregation switches  "<< "\n";
+	//std::cout << "------------- "<<"\n";
 
+	
+	
 //=========== Start the simulation ===========//
 //
 
-	std::cout << "Start Simulation.. "<<"\n";
-	for (i=0;i<total_host;i++){
+	// output in console the running simulation
+	std::cout <<"simulating "<<total_host<<" host - "<<total_apps<<" apps...\n" ;
+	//std::cout << "Start Simulation.. "<<"\n";
+	for (i=0;i<total_apps;i++){
 		app[i].Start (Seconds (0.0));
-  		app[i].Stop (Seconds (100.0));
+  		app[i].Stop (Seconds (1.0));
 	}
   	Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
 // Calculate Throughput using Flowmonitor
@@ -380,8 +444,9 @@ int
 	Use of NetAnim 
 	Animation code added BY: ARFATH AHAMED email: arfathsm@gmail.com
 */
-	AnimationInterface anim("fattree.xml");
+	//AnimationInterface anim("fattree.xml");
 // NodeContainer for core switches
+/*
 	for (i=0; i<num_group;i++){  	
 		anim.SetConstantPosition(core[i].Get(0),an+0.5,0.0);
 	anim.SetConstantPosition(core[i].Get(1),an+1.5,0.0);
@@ -427,19 +492,114 @@ int
 		}
 	}  	
 
-
+*/
 //-------------------------**********ARFATH AHAMED**********----------------------------------------
 
-  	NS_LOG_INFO ("Run Simulation.");
-  	Simulator::Stop (Seconds(101.0));
+  	//NS_LOG_INFO ("Run Simulation.");
+  	Simulator::Stop (Seconds(2.0));
   	Simulator::Run ();
 
   	monitor->CheckForLostPackets ();
-  	monitor->SerializeToXmlFile(filename, true, true);
+  	//monitor->SerializeToXmlFile(filename, true, true);
 
-	std::cout << "Simulation finished "<<"\n";
+	//std::cout << "Simulation finished "<<"\n";
+
+				// Statistics 
+				Ptr<Ipv4FlowClassifier> classifier = DynamicCast<Ipv4FlowClassifier> (flowmon.GetClassifier ());
+				std::map<FlowId, FlowMonitor::FlowStats> stats = monitor->GetFlowStats ();
+				i = 0;
+				for (std::map<FlowId, FlowMonitor::FlowStats>::const_iterator iter = stats.begin (); iter != stats.end (); ++iter)
+				{
+					//Ipv4FlowClassifier::FiveTuple t = classifier->FindFlow (iter->first);
+					//i_throughput = iter->second.rxBytes * 8.0 / (iter->second.timeLastRxPacket.GetSeconds()-iter->second.timeFirstTxPacket.GetSeconds()); // for debug purposes
+					
+					// if the flow has rxPackets = 0, also delaySum will return 0 
+					// so to avoid nan we fix the throughput and delay values
+					if( ! iter->second.rxPackets )
+					{
+						i_throughput = 0;
+						i_delay = 5;
+					}
+					else
+					{
+						i_throughput = (iter->second.rxPackets * 1024 * 8) / iter->second.delaySum.GetSeconds() ;
+						i_delay = iter->second.delaySum.GetSeconds() / iter->second.rxPackets;
+					}
+					// Min and Max values
+					if(i == 0 && t==0)
+					{
+						min_throughput = i_throughput;
+						max_throughput = i_throughput;
+						min_delay = i_delay;
+						max_delay = i_delay;
+					}
+					else{
+						if(i_throughput < min_throughput)
+						min_throughput = i_throughput;
+						else
+						if(i_throughput > max_throughput)
+						max_throughput = i_throughput;
+						
+						if(i_delay < min_delay)
+						min_delay = i_delay;
+						else
+						if(i_delay > max_delay)
+						max_delay = i_delay;
+					}
+					// count che flows
+					i++;
+					// store in the arrays the candidates for the avg 
+					throughputs[t] = throughputs[t] + (i_throughput / 1024);
+					delays[t] = delays[t] + i_delay;
+					droprate[t] = droprate[t] + (iter->second.txPackets - iter->second.rxPackets) / iter->second.txPackets;
+					
+					// debug console output 
+					//NS_LOG_UNCOND("Flow ID: " << iter->first << " Src Addr " << t.sourceAddress << " Dst Addr " << t.destinationAddress);
+					//NS_LOG_UNCOND("Tx Packets = " << iter->second.txPackets);
+					//NS_LOG_UNCOND("Rx Packets = " << iter->second.rxPackets);
+					//NS_LOG_UNCOND("Throughput: " <<  i_throughput / 1024 << " Kbps");
+					//NS_LOG_UNCOND("Delay: " <<  i_delay << " s\n");
+				}
+				
+				total_flows = i;
+				//monitor->SerializeToXmlFile(filename, true, false);
+				
+				throughputs[t] = throughputs[t] / double(total_flows);
 
   	Simulator::Destroy ();
+	
+				file2.open ("rawdata-fattree-leonpelleg.txt", std::ios_base::app);
+				file2 << total_host << ";"<< traffic << ";"<< total_apps << ";"<< throughputs[t] / 1024<< ";\n";
+				file2.close();
+				
+			}
+			
+			// calculate avg from the avgs of every iteration
+			for(int i = 0; i < iterations; i++)
+			{
+				m_delay =  m_delay + (delays[i] / double(iterations));
+				m_throughput = m_throughput + (throughputs[i]/ double(iterations));
+				m_droprate = m_droprate + (droprate[i]/ double(iterations));
+			}
+			
+			// output to formatted file
+			file1.open ("output-fat-tree-leonpelleg.txt", std::ios_base::app);
+			file1 << "Total number of hosts =  "<< total_host<<"\n";
+			file1 << "Total number of applications =  "<< total_apps <<"\n";
+			file1 <<"Minimum Delay: " <<  min_delay << " s\n";
+			file1 <<"Maximum Delay: " <<  max_delay << " s\n";
+			file1 <<"Minimum Throughput: " <<  min_throughput / 1024 / 1024 << " Mbps\n";
+			file1 <<"Maximum Throughput: " <<  max_throughput / 1024 / 1024 << " Mbps\n";
+			file1 <<"Average Delay: " <<  m_delay << " s\n";
+			file1 <<"Average Throughput: " <<  m_throughput / 1024 << " Mbps\n";
+			file1 <<"Average Packetloss rate: " <<  m_droprate * 100 << " %\n";
+			file1 << "\n";
+			file1.close();
+			
+			std::cout <<"Done\n" ;
+			
+		}
+	}
   	NS_LOG_INFO ("Done.");
 
 	return 0;
